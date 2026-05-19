@@ -1,0 +1,412 @@
+@import "tailwindcss";
+
+:root {
+  --cream: #F4EDE0;
+  --cream-soft: #FBF6EE;
+  --cream-card: #ECE3D2;
+  --ink: #1F1813;
+  --ink-soft: #3B322A;
+  --ink-muted: #8E8275;
+  --ink-faint: #B2A698;
+}
+
+@theme inline {
+  --color-cream: #F4EDE0;
+  --color-cream-50: #FBF6EE;
+  --color-cream-100: #F4EDE0;
+  --color-cream-200: #ECE3D2;
+  --color-ink: #1F1813;
+  --color-ink-soft: #3B322A;
+  --color-ink-muted: #8E8275;
+  --color-ink-faint: #B2A698;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-instrument-serif);
+}
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Serif utility ──────────────────────────────────────── */
+.serif {
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif;
+  letter-spacing: -0.01em;
+}
+.serif-italic {
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif;
+  font-style: italic;
+}
+
+/* ── Display typography ─────────────────────────────────── */
+.display {
+  font-family: var(--font-instrument-serif), 'Instrument Serif', serif;
+  font-weight: 400;
+  letter-spacing: -0.022em;
+  line-height: 0.96;
+  text-wrap: balance;
+  font-feature-settings: 'liga', 'kern';
+  padding-bottom: 0.05em;
+}
+.display em, .display i {
+  font-style: italic;
+  color: var(--ink-faint);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  margin-left: -0.02em;
+  margin-right: -0.02em;
+}
+.display .line { display: block; }
+.display sub, .display sup { line-height: 0; }
+
+/* ── Pill buttons ───────────────────────────────────────── */
+.btn-primary {
+  background: #2B231C;
+  color: #F4EDE0;
+  border-radius: 999px;
+  padding: 14px 22px;
+  font-weight: 500;
+  transition: transform .2s cubic-bezier(.2,.7,.2,1), background .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  will-change: transform;
+}
+.btn-primary:hover {
+  background: #110D08;
+  transform: translateY(-1px);
+}
+.btn-secondary {
+  background: rgba(0,0,0,0.04);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 14px 22px;
+  font-weight: 500;
+  transition: background .2s, transform .2s cubic-bezier(.2,.7,.2,1);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  will-change: transform;
+}
+.btn-secondary:hover {
+  background: rgba(0,0,0,0.07);
+  transform: translateY(-1px);
+}
+.btn-primary:hover .icon-go,
+.btn-secondary:hover .icon-go {
+  transform: translateX(3px);
+}
+.icon-go {
+  transition: transform .25s cubic-bezier(.2,.7,.2,1);
+  display: inline-flex;
+}
+
+/* ── Soft inset card chrome ─────────────────────────────── */
+.card-soft {
+  background: rgba(255,255,255,0.4);
+  border: 1px solid rgba(31,24,19,0.06);
+  border-radius: 28px;
+  transition: transform .35s cubic-bezier(.2,.7,.2,1), background .25s, box-shadow .35s;
+}
+.card-soft.lift:hover {
+  transform: translateY(-3px);
+  background: rgba(255,255,255,0.55);
+}
+
+.hairline { border-color: rgba(31,24,19,0.08); }
+
+/* ── Eyebrow pill ───────────────────────────────────────── */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(31,24,19,0.05);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ── Glass tile over gradient bg ────────────────────────── */
+.glass-tile {
+  background: linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.08));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 28px;
+}
+
+/* ── Step row ───────────────────────────────────────────── */
+.step-row {
+  border-radius: 999px;
+  padding: 28px 36px;
+  cursor: pointer;
+  transition: background .25s;
+}
+.step-row[data-active="true"] {
+  background: rgba(31,24,19,0.05);
+}
+.step-row[data-active="false"]:hover {
+  background: rgba(31,24,19,0.025);
+}
+.step-row .step-label {
+  transition: color .35s cubic-bezier(.2,.7,.2,1), letter-spacing .35s ease, transform .35s cubic-bezier(.2,.7,.2,1);
+}
+.step-row[data-active="true"] .step-label {
+  color: var(--ink);
+  transform: translateX(4px);
+}
+.step-row[data-active="false"] .step-label {
+  color: var(--ink-faint);
+}
+
+/* Step number superscript */
+.num-sup {
+  font-family: var(--font-geist-sans), 'Geist', sans-serif;
+  font-size: 18px;
+  color: var(--ink-faint);
+  vertical-align: super;
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+/* Step progress bar */
+.step-bar {
+  height: 2px;
+  background: rgba(31,24,19,0.08);
+  border-radius: 999px;
+  margin-top: 14px;
+  overflow: hidden;
+}
+.step-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  width: 0;
+  transition: width .15s linear;
+  border-radius: 999px;
+}
+
+/* Step preview crossfade */
+.step-stage { position: relative; }
+.step-stage > .step-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: scale(0.985);
+  transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform 1.2s cubic-bezier(.2,.7,.2,1);
+  pointer-events: none;
+}
+.step-stage > .step-layer.is-active {
+  opacity: 1;
+  transform: scale(1);
+  position: relative;
+  pointer-events: auto;
+}
+
+/* ── Marquee ────────────────────────────────────────────── */
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.marquee-track {
+  animation: marquee 38s linear infinite;
+  will-change: transform;
+}
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+/* ── Page warmth glow ───────────────────────────────────── */
+.page-warmth {
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,196,156,0.45), transparent 60%);
+}
+
+/* ── Image rounding ─────────────────────────────────────── */
+.img-blob {
+  border-radius: 28px;
+  overflow: hidden;
+}
+
+/* ── Underline link ─────────────────────────────────────── */
+.ulink {
+  color: var(--ink);
+  position: relative;
+}
+.ulink::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 1px;
+  background: currentColor;
+  opacity: .25;
+  transition: opacity .2s;
+}
+.ulink:hover::after { opacity: .8; }
+
+/* ── Selection ──────────────────────────────────────────── */
+::selection {
+  background: rgba(31,24,19,0.85);
+  color: #F4EDE0;
+}
+
+/* ── Scroll reveal ──────────────────────────────────────── */
+[data-reveal] { --rev-d: 0ms; }
+.r-item, [data-reveal] > * {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1);
+  transition-delay: var(--rev-d, 0ms);
+  will-change: opacity, transform;
+}
+[data-reveal].is-in .r-item,
+[data-reveal].is-in > * {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1);
+}
+.reveal.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Hero gradient drift ────────────────────────────────── */
+@keyframes drift {
+  0%, 100% { transform: scale(1.04) translate3d(0,0,0); }
+  33%      { transform: scale(1.06) translate3d(-1.2%, -0.8%, 0); }
+  66%      { transform: scale(1.05) translate3d(1.4%, 0.6%, 0); }
+}
+.drift > * {
+  animation: drift 18s ease-in-out infinite;
+}
+
+/* ── Nav scrolled state ─────────────────────────────────── */
+.nav-scrolled {
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  background: rgba(244,237,224,0.78);
+  border-bottom: 1px solid rgba(31,24,19,0.06);
+}
+
+/* ── Mobile menu ────────────────────────────────────────── */
+.mobile-drawer {
+  transition: transform .45s cubic-bezier(.2,.7,.2,1), opacity .35s;
+}
+.mobile-drawer[data-open="false"] {
+  transform: translateY(-12px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 3D Tilt cards ──────────────────────────────────────── */
+.tilt-card {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.tilt-card > * {
+  transform: translateZ(20px);
+}
+
+/* ── Architecture stack 3D ──────────────────────────────── */
+.arch-scene {
+  perspective: 1200px;
+}
+.arch-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform-style: preserve-3d;
+  animation: arch-float 6s ease-in-out infinite;
+}
+@keyframes arch-float {
+  0%, 100% { transform: rotateX(12deg) rotateY(-8deg) rotateZ(1deg); }
+  50%      { transform: rotateX(8deg) rotateY(-4deg) rotateZ(-1deg); }
+}
+.arch-layer {
+  transform-style: preserve-3d;
+  animation: arch-layer-in 0.8s cubic-bezier(.2,.7,.2,1) calc(var(--layer-i) * 120ms) both;
+}
+@keyframes arch-layer-in {
+  from { opacity: 0; transform: translateZ(-40px) translateY(20px); }
+  to   { opacity: 1; transform: translateZ(calc(var(--layer-i) * 8px)); }
+}
+.arch-layer-inner {
+  background: rgba(255,255,255,0.5);
+  border: 1px solid rgba(31,24,19,0.08);
+  border-left: 4px solid var(--layer-color);
+  border-radius: 16px;
+  padding: 16px 20px;
+  backdrop-filter: blur(4px);
+}
+
+/* ── DAG visualization animations ───────────────────────── */
+.dag-node {
+  animation: dag-pop 0.5s cubic-bezier(.2,.7,.2,1) both;
+}
+.dag-node-1 { animation-delay: 0ms; }
+.dag-node-2 { animation-delay: 150ms; }
+.dag-node-3 { animation-delay: 200ms; }
+.dag-node-4 { animation-delay: 400ms; }
+.dag-node-5 { animation-delay: 350ms; }
+.dag-node-6 { animation-delay: 600ms; }
+@keyframes dag-pop {
+  from { opacity: 0; transform: scale(0.5); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.dag-edge {
+  stroke-dashoffset: 100;
+  animation: dag-draw 0.8s cubic-bezier(.2,.7,.2,1) both;
+}
+.dag-edge-1 { animation-delay: 80ms; }
+.dag-edge-2 { animation-delay: 120ms; }
+.dag-edge-3 { animation-delay: 280ms; }
+.dag-edge-4 { animation-delay: 320ms; }
+.dag-edge-5 { animation-delay: 300ms; }
+.dag-edge-6 { animation-delay: 500ms; }
+.dag-edge-7 { animation-delay: 520ms; }
+@keyframes dag-draw {
+  from { stroke-dashoffset: 100; opacity: 0; }
+  to   { stroke-dashoffset: 0; opacity: 1; }
+}
+
+/* ── Nav dropdown ───────────────────────────────────────── */
+.nav-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s, transform .25s cubic-bezier(.2,.7,.2,1);
+}
+.nav-dropdown-trigger:hover .nav-dropdown,
+.nav-dropdown-trigger:focus-within .nav-dropdown {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Reduced motion ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal, [data-reveal] > *, .r-item {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
