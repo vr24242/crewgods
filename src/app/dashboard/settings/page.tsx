@@ -11,6 +11,9 @@ import {
 } from "lucide-react";
 import { cn, formatCents } from "@/lib/utils";
 
+// TODO: Wire to settings API when available.
+// Currently using local state — settings persistence is not yet in the API.
+
 export default function SettingsPage() {
   const [orgName, setOrgName] = useState("Demo Company");
   const [budget, setBudget] = useState(5000);

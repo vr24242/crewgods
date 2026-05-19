@@ -10,6 +10,9 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// TODO: Wire to real integration status API when available.
+// Currently using static data — integration CRUD is not yet in the API.
+
 const integrations = [
   {
     id: "slack",
@@ -116,7 +119,8 @@ export default function IntegrationsPage() {
       <div>
         <h1 className="text-2xl font-bold text-ink">Integrations</h1>
         <p className="text-sm text-ink-muted mt-1">
-          Connect your tools to power workflow automations
+          Connect your tools to power workflow automations.
+          <span className="ml-1 text-xs text-ink-faint">(Integration status will be live once the API is available)</span>
         </p>
       </div>
 
