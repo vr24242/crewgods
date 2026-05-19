@@ -1,200 +1,262 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Check,
-  ExternalLink,
   Plug,
-  RefreshCw,
-  AlertCircle,
+  MessageSquare,
+  Mail,
+  CalendarDays,
+  CreditCard,
+  Send,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// TODO: Wire to real integration status API when available.
-// Currently using static data — integration CRUD is not yet in the API.
+/* Integration catalogue */
 
-const integrations = [
+type Integration = {
+  id: string;
+  name: string;
+  description: string;
+  icon: React.ReactNode;
+  category: string;
+  defaultConnected: boolean;
+};
+
+const catalogue: Integration[] = [
   {
     id: "slack",
     name: "Slack",
     description: "Send messages, create channels, receive approval responses",
-    icon: "https://cdn.simpleicons.org/slack",
+    icon: <MessageSquare className="w-5 h-5" />,
     category: "Communication",
-    status: "connected" as const,
-    connectedAt: "2026-05-10",
-    usedBy: ["Finance", "HR", "Support", "Ops", "Sales"],
+    defaultConnected: true,
   },
   {
     id: "gmail",
     name: "Gmail",
     description: "Send emails, receive invoices, process inbound messages",
-    icon: "https://cdn.simpleicons.org/gmail",
+    icon: <Mail className="w-5 h-5" />,
     category: "Communication",
-    status: "connected" as const,
-    connectedAt: "2026-05-10",
-    usedBy: ["Finance", "HR", "Support", "Ops", "Sales"],
+    defaultConnected: true,
   },
   {
-    id: "hubspot",
-    name: "HubSpot",
-    description: "CRM integration for contacts, deals, and pipeline management",
-    icon: "https://cdn.simpleicons.org/hubspot",
-    category: "CRM",
-    status: "connected" as const,
-    connectedAt: "2026-05-12",
-    usedBy: ["Sales"],
-  },
-  {
-    id: "google_sheets",
-    name: "Google Sheets",
-    description: "Read/write spreadsheet data for reports and tracking",
-    icon: "https://cdn.simpleicons.org/googlesheets",
+    id: "google_calendar",
+    name: "Google Calendar",
+    description: "Schedule meetings, check availability, sync events",
+    icon: <CalendarDays className="w-5 h-5" />,
     category: "Productivity",
-    status: "connected" as const,
-    connectedAt: "2026-05-11",
-    usedBy: ["HR", "Ops"],
-  },
-  {
-    id: "quickbooks",
-    name: "QuickBooks",
-    description: "Accounting integration for invoices, expenses, and reconciliation",
-    icon: "https://cdn.simpleicons.org/intuit",
-    category: "Finance",
-    status: "not_connected" as const,
-    usedBy: ["Finance"],
-  },
-  {
-    id: "zendesk",
-    name: "Zendesk",
-    description: "Support ticket management and SLA monitoring",
-    icon: "https://cdn.simpleicons.org/zendesk",
-    category: "Support",
-    status: "not_connected" as const,
-    usedBy: ["Support"],
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp Business",
-    description: "Send approval requests and notifications via WhatsApp",
-    icon: "https://cdn.simpleicons.org/whatsapp",
-    category: "Communication",
-    status: "not_connected" as const,
-    usedBy: ["HR", "Support"],
-  },
-  {
-    id: "shopify",
-    name: "Shopify",
-    description: "E-commerce orders, inventory, and customer data",
-    icon: "https://cdn.simpleicons.org/shopify",
-    category: "Commerce",
-    status: "not_connected" as const,
-    usedBy: [],
+    defaultConnected: false,
   },
   {
     id: "github",
     name: "GitHub",
     description: "Repository events, PRs, issues, and deployment tracking",
-    icon: "https://cdn.simpleicons.org/github",
+    icon: <span className="text-lg leading-none">🐙</span>,
     category: "Engineering",
-    status: "not_connected" as const,
-    usedBy: [],
+    defaultConnected: false,
+  },
+  {
+    id: "jira",
+    name: "Jira",
+    description: "Issue tracking, sprint planning, and project management",
+    icon: <span className="text-lg leading-none">📋</span>,
+    category: "Project Management",
+    defaultConnected: false,
+  },
+  {
+    id: "salesforce",
+    name: "Salesforce",
+    description: "CRM integration for contacts, deals, and pipeline management",
+    icon: <span className="text-lg leading-none">☁️</span>,
+    category: "CRM",
+    defaultConnected: false,
   },
   {
     id: "stripe",
     name: "Stripe",
     description: "Payment processing, subscription management, and billing",
-    icon: "https://cdn.simpleicons.org/stripe",
+    icon: <CreditCard className="w-5 h-5" />,
     category: "Finance",
-    status: "not_connected" as const,
-    usedBy: [],
+    defaultConnected: false,
+  },
+  {
+    id: "sendgrid",
+    name: "SendGrid",
+    description: "Transactional email delivery and marketing campaigns",
+    icon: <Send className="w-5 h-5" />,
+    category: "Communication",
+    defaultConnected: false,
   },
 ];
 
+/* Toast component */
+
+function Toast({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 bg-ink text-cream rounded-2xl shadow-lg animate-[slideUp_0.3s_ease-out]">
+      <span className="text-sm font-medium">{message}</span>
+      <button onClick={onClose} className="text-cream/60 hover:text-cream transition-colors">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+/* Main page */
+
 export default function IntegrationsPage() {
-  const connected = integrations.filter((i) => i.status === "connected");
-  const available = integrations.filter((i) => i.status !== "connected");
+  const [connected, setConnected] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(catalogue.map((i) => [i.id, i.defaultConnected]))
+  );
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleToggle = useCallback(
+    (id: string) => {
+      if (connected[id]) {
+        // Disconnect (local-only)
+        setConnected((prev) => ({ ...prev, [id]: false }));
+        showToast("Disconnected. Changes are local only.");
+      } else {
+        // Connect attempt -> coming soon toast
+        showToast("Coming soon — OAuth connection in next release");
+      }
+    },
+    [connected, showToast]
+  );
+
+  const connectedList = catalogue.filter((i) => connected[i.id]);
+  const disconnectedList = catalogue.filter((i) => !connected[i.id]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-ink">Integrations</h1>
         <p className="text-sm text-ink-muted mt-1">
           Connect your tools to power workflow automations.
-          <span className="ml-1 text-xs text-ink-faint">(Integration status will be live once the API is available)</span>
         </p>
       </div>
 
       {/* Connected */}
-      <div>
-        <h2 className="text-sm font-medium text-ink-muted uppercase tracking-wider mb-3">
-          Connected ({connected.length})
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {connected.map((integration) => (
-            <div
-              key={integration.id}
-              className="flex items-start gap-4 p-4 bg-white/40 border border-ink/12 rounded-2xl"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-cream-200 flex items-center justify-center shrink-0 overflow-hidden">
-                <img src={integration.icon} alt="" className="w-6 h-6" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm text-ink">{integration.name}</span>
-                  <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                    <Check className="w-3 h-3" /> Connected
-                  </span>
-                </div>
-                <p className="text-xs text-ink-muted mt-0.5">{integration.description}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[10px] text-ink-muted">Used by:</span>
-                  {integration.usedBy.map((p) => (
-                    <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-cream-200 text-ink-muted">{p}</span>
-                  ))}
-                </div>
-              </div>
-              <button className="text-xs text-ink-muted hover:text-ink transition-colors flex items-center gap-1">
-                <RefreshCw className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
+      {connectedList.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium text-ink-muted uppercase tracking-wider mb-3">
+            Connected ({connectedList.length})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {connectedList.map((integration) => (
+              <IntegrationCard
+                key={integration.id}
+                integration={integration}
+                isConnected
+                onToggle={() => handleToggle(integration.id)}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Available */}
-      <div>
-        <h2 className="text-sm font-medium text-ink-muted uppercase tracking-wider mb-3">
-          Available ({available.length})
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {available.map((integration) => (
-            <div
-              key={integration.id}
-              className="flex items-start gap-4 p-4 bg-white/40 border border-ink/8 rounded-2xl"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-cream-200 flex items-center justify-center shrink-0 overflow-hidden opacity-50">
-                <img src={integration.icon} alt="" className="w-6 h-6" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm text-ink">{integration.name}</span>
-                  <span className="text-[10px] text-ink-muted">{integration.category}</span>
-                </div>
-                <p className="text-xs text-ink-muted mt-0.5">{integration.description}</p>
-                {integration.usedBy.length > 0 && (
-                  <div className="flex items-center gap-1 mt-2 text-[10px] text-orange-700">
-                    <AlertCircle className="w-3 h-3" />
-                    Required by: {integration.usedBy.join(", ")}
-                  </div>
-                )}
-              </div>
-              <button className="text-xs px-3 py-1.5 rounded-2xl bg-cream-200 text-ink-soft hover:bg-ink/8 transition-colors shrink-0 flex items-center gap-1">
-                <Plug className="w-3 h-3" /> Connect
-              </button>
-            </div>
-          ))}
+      {disconnectedList.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium text-ink-muted uppercase tracking-wider mb-3">
+            Available ({disconnectedList.length})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {disconnectedList.map((integration) => (
+              <IntegrationCard
+                key={integration.id}
+                integration={integration}
+                isConnected={false}
+                onToggle={() => handleToggle(integration.id)}
+              />
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* Toast */}
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
+      {/* Slide-up keyframe (injected once) */}
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* Card */
+
+function IntegrationCard({
+  integration,
+  isConnected,
+  onToggle,
+}: {
+  integration: Integration;
+  isConnected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-4 p-4 bg-white/40 border rounded-2xl transition-colors",
+        isConnected ? "border-emerald-400/30" : "border-ink/8"
+      )}
+    >
+      {/* Icon */}
+      <div
+        className={cn(
+          "w-10 h-10 rounded-2xl flex items-center justify-center shrink-0",
+          isConnected ? "bg-emerald-100 text-emerald-700" : "bg-cream-200 text-ink-muted"
+        )}
+      >
+        {integration.icon}
       </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm text-ink">{integration.name}</span>
+          {isConnected && (
+            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+              <Check className="w-3 h-3" /> Connected
+            </span>
+          )}
+          {!isConnected && (
+            <span className="text-[10px] text-ink-muted">{integration.category}</span>
+          )}
+        </div>
+        <p className="text-xs text-ink-muted mt-0.5">{integration.description}</p>
+      </div>
+
+      {/* Toggle / Connect */}
+      {isConnected ? (
+        <button
+          onClick={onToggle}
+          className="text-xs px-3 py-1.5 rounded-2xl bg-emerald-100 text-emerald-800 hover:bg-red-100 hover:text-red-800 transition-colors shrink-0"
+        >
+          Disconnect
+        </button>
+      ) : (
+        <button
+          onClick={onToggle}
+          className="text-xs px-3 py-1.5 rounded-2xl bg-ink text-cream hover:bg-ink-soft transition-colors shrink-0 flex items-center gap-1"
+        >
+          <Plug className="w-3 h-3" /> Connect
+        </button>
+      )}
     </div>
   );
 }

@@ -1,12 +1,44 @@
 // ═══════════════════════════════════════════════════════
 // PROXY ROUTE — Forwards dashboard requests to Fastify
-// Adds auth headers and handles the API base URL
+// Falls back to direct DB queries, then to mock data
 // ═══════════════════════════════════════════════════════
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/auth";
+import { eq, sql, and, gte, desc, count, sum, inArray } from "drizzle-orm";
 
 const API_BASE = process.env.API_URL ?? "http://localhost:3001";
+
+// ── Pack metadata (not stored in DB, used for display) ──
+const PACK_META: Record<string, { name: string; icon: string; color: string }> = {
+  finance: { name: "Finance", icon: "💰", color: "#F59E0B" },
+  hr: { name: "HR", icon: "👥", color: "#EC4899" },
+  support: { name: "Support", icon: "🎧", color: "#6366F1" },
+  ops: { name: "Ops", icon: "⚙️", color: "#14B8A6" },
+  sales: { name: "Sales", icon: "🎯", color: "#8B5CF6" },
+};
+
+function getPackMeta(packId: string) {
+  return PACK_META[packId] ?? { name: packId, icon: "📦", color: "#6B7280" };
+}
+
+// ── Lazy DB import to avoid build-time crashes ──────────
+async function tryGetDb() {
+  try {
+    const { getDb } = await import("@/db");
+    return getDb();
+  } catch {
+    return null;
+  }
+}
+
+async function tryGetSchema() {
+  try {
+    return await import("@/db/schema");
+  } catch {
+    return null;
+  }
+}
 
 async function proxy(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
@@ -41,17 +73,398 @@ async function proxy(request: NextRequest, { params }: { params: Promise<{ path:
 
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
-  } catch (err) {
-    // If the Fastify server is not running, return mock data
+  } catch {
+    // Fastify not running — try direct DB, then fall back to mock data
     return handleOfflineRequest(path, request);
   }
 }
 
-// ── Offline mock responses when Fastify isn't running ───
-// This allows the dashboard to work in "demo mode"
+// ── Offline handler: DB first, then mock ────────────────
 async function handleOfflineRequest(path: string[], request: NextRequest): Promise<NextResponse> {
   const route = path.join("/");
 
+  // Try real DB queries first
+  try {
+    const dbResult = await handleDbRequest(route, request);
+    if (dbResult) return dbResult;
+  } catch (err) {
+    console.error("[proxy] DB query failed, falling back to mock:", err);
+  }
+
+  // Fall back to mock data
+  return handleMockRequest(route, request);
+}
+
+// ── Direct DB queries ───────────────────────────────────
+
+async function handleDbRequest(route: string, request: NextRequest): Promise<NextResponse | null> {
+  const db = await tryGetDb();
+  const schema = await tryGetSchema();
+  if (!db || !schema) return null;
+
+  // Dashboard stats
+  if (route === "stats/dashboard") {
+    return NextResponse.json(await queryDashboardStats(db, schema));
+  }
+
+  // Workflow list
+  if (route === "workflows" || route === "api/workflows") {
+    const statusFilter = request.nextUrl.searchParams.get("status");
+    const packFilter = request.nextUrl.searchParams.get("pack");
+    return NextResponse.json(await queryWorkflows(db, schema, statusFilter, packFilter));
+  }
+
+  // Packs
+  if (route === "packs" || route === "api/packs") {
+    return NextResponse.json(await queryPacks(db, schema));
+  }
+
+  // Approvals
+  if (route === "approvals" || route === "api/approvals") {
+    return NextResponse.json(await queryApprovals(db, schema));
+  }
+
+  // Approval action (POST) — let it pass through (needs Temporal)
+  if (route.includes("approvals/") && request.method === "POST") {
+    return null;
+  }
+
+  // Workflow actions (POST) — let it pass through (needs Temporal)
+  if (request.method === "POST" && route.includes("workflows/")) {
+    return null;
+  }
+
+  // Templates
+  if (route.endsWith("templates")) {
+    return NextResponse.json({ templates: mockTemplates() });
+  }
+
+  return null;
+}
+
+// ── Query: Dashboard Stats ──────────────────────────────
+
+async function queryDashboardStats(db: any, schema: any) {
+  const { workflowRuns, approvals: approvalsTable } = schema;
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  // Run all queries in parallel
+  const [
+    todayRunsResult,
+    pendingApprovalsCount,
+    costResult,
+    successRateResult,
+    recentRunsResult,
+    pendingApprovalsDetail,
+    packStatsResult,
+  ] = await Promise.all([
+    // Count workflow runs today
+    db.select({ count: count() })
+      .from(workflowRuns)
+      .where(gte(workflowRuns.createdAt, todayStart)),
+
+    // Count pending approvals
+    db.select({ count: count() })
+      .from(approvalsTable)
+      .where(eq(approvalsTable.status, "pending")),
+
+    // Sum costs today
+    db.select({ total: sum(workflowRuns.totalCostCents) })
+      .from(workflowRuns)
+      .where(gte(workflowRuns.createdAt, todayStart)),
+
+    // Success rate: completed / (completed + failed) over all runs
+    db.select({
+      completed: sql<number>`count(*) filter (where ${workflowRuns.status} = 'completed')`,
+      total: sql<number>`count(*) filter (where ${workflowRuns.status} in ('completed', 'failed'))`,
+    }).from(workflowRuns),
+
+    // Recent runs (last 8)
+    db.select()
+      .from(workflowRuns)
+      .orderBy(desc(workflowRuns.createdAt))
+      .limit(8),
+
+    // Pending approvals with workflow info
+    db.select({
+      id: approvalsTable.id,
+      workflowRunId: approvalsTable.workflowRunId,
+      nodeId: approvalsTable.nodeId,
+      title: approvalsTable.title,
+      description: approvalsTable.description,
+      context: approvalsTable.context,
+      priority: approvalsTable.priority,
+      packId: workflowRuns.packId,
+      workflowName: workflowRuns.name,
+    })
+      .from(approvalsTable)
+      .innerJoin(workflowRuns, eq(approvalsTable.workflowRunId, workflowRuns.id))
+      .where(eq(approvalsTable.status, "pending"))
+      .orderBy(desc(approvalsTable.createdAt))
+      .limit(10),
+
+    // Pack stats: runs per pack today
+    db.select({
+      packId: workflowRuns.packId,
+      runsToday: count(),
+    })
+      .from(workflowRuns)
+      .where(gte(workflowRuns.createdAt, todayStart))
+      .groupBy(workflowRuns.packId),
+  ]);
+
+  const workflowsToday = todayRunsResult[0]?.count ?? 0;
+  const approvalsPending = pendingApprovalsCount[0]?.count ?? 0;
+  const costTodayCents = Number(costResult[0]?.total ?? 0);
+  const completedCount = Number(successRateResult[0]?.completed ?? 0);
+  const totalFinished = Number(successRateResult[0]?.total ?? 0);
+  const successRate = totalFinished > 0
+    ? Math.round((completedCount / totalFinished) * 1000) / 10
+    : 100;
+
+  // Map recent runs to frontend shape
+  const recentRuns = recentRunsResult.map((r: any) => {
+    const meta = getPackMeta(r.packId);
+    const duration = r.startedAt && r.completedAt
+      ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime()
+      : r.startedAt
+        ? Date.now() - new Date(r.startedAt).getTime()
+        : undefined;
+    return {
+      id: r.id,
+      templateId: r.templateId,
+      templateName: r.name,
+      pack: meta.name,
+      packColor: meta.color,
+      status: r.status ?? "queued",
+      trigger: r.triggerEvent ?? "manual",
+      startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : new Date(r.createdAt).toISOString(),
+      completedAt: r.completedAt ? new Date(r.completedAt).toISOString() : undefined,
+      duration,
+      costCents: r.totalCostCents ?? 0,
+      nodeCount: r.nodeCount ?? 0,
+      nodesCompleted: r.nodesCompleted ?? 0,
+    };
+  });
+
+  // Map pending approvals to frontend shape
+  const pendingApprovals = pendingApprovalsDetail.map((a: any) => {
+    const meta = getPackMeta(a.packId);
+    const contextStr = a.description ?? JSON.stringify(a.context ?? {});
+    return {
+      id: a.id,
+      workflowId: a.workflowRunId,
+      workflowName: a.workflowName,
+      node: a.title,
+      detail: contextStr,
+      pack: meta.name,
+      priority: a.priority ?? "medium",
+    };
+  });
+
+  // Build pack stats from run counts + known pack metadata
+  const runsByPack: Record<string, number> = {};
+  for (const row of packStatsResult) {
+    runsByPack[row.packId] = Number(row.runsToday);
+  }
+
+  // Get distinct template counts per pack (all time)
+  let templateCountsByPack: Record<string, number> = {};
+  try {
+    const templateCounts = await db.select({
+      packId: workflowRuns.packId,
+      templates: sql<number>`count(distinct ${workflowRuns.templateId})`,
+    })
+      .from(workflowRuns)
+      .groupBy(workflowRuns.packId);
+    for (const row of templateCounts) {
+      templateCountsByPack[row.packId] = Number(row.templates);
+    }
+  } catch {
+    // Non-critical, use defaults
+  }
+
+  const allPackIds = new Set([
+    ...Object.keys(PACK_META),
+    ...Object.keys(runsByPack),
+  ]);
+  const packStats = Array.from(allPackIds).map((packId) => {
+    const meta = getPackMeta(packId);
+    return {
+      name: meta.name,
+      icon: meta.icon,
+      color: meta.color,
+      workflows: templateCountsByPack[packId] ?? 0,
+      runsToday: runsByPack[packId] ?? 0,
+    };
+  });
+
+  return {
+    workflowsToday,
+    workflowsTrend: "+0%",
+    approvalsPending,
+    costToday: costTodayCents,
+    costBudget: 5000,
+    successRate,
+    recentRuns,
+    pendingApprovals,
+    packStats,
+  };
+}
+
+// ── Query: Workflows ────────────────────────────────────
+
+async function queryWorkflows(db: any, schema: any, statusFilter: string | null, packFilter: string | null) {
+  const { workflowRuns } = schema;
+
+  const conditions = [];
+  if (statusFilter) {
+    conditions.push(eq(workflowRuns.status, statusFilter));
+  }
+  if (packFilter) {
+    conditions.push(eq(workflowRuns.packId, packFilter));
+  }
+
+  const whereClause = conditions.length > 0
+    ? conditions.length === 1
+      ? conditions[0]
+      : and(...conditions)
+    : undefined;
+
+  const rows = whereClause
+    ? await db.select().from(workflowRuns).where(whereClause).orderBy(desc(workflowRuns.createdAt)).limit(50)
+    : await db.select().from(workflowRuns).orderBy(desc(workflowRuns.createdAt)).limit(50);
+
+  const workflows = rows.map((r: any) => {
+    const meta = getPackMeta(r.packId);
+    const duration = r.startedAt && r.completedAt
+      ? new Date(r.completedAt).getTime() - new Date(r.startedAt).getTime()
+      : r.startedAt
+        ? Date.now() - new Date(r.startedAt).getTime()
+        : undefined;
+    return {
+      id: r.id,
+      templateId: r.templateId,
+      templateName: r.name,
+      pack: meta.name,
+      packColor: meta.color,
+      status: r.status ?? "queued",
+      trigger: r.triggerEvent ?? "manual",
+      startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : new Date(r.createdAt).toISOString(),
+      completedAt: r.completedAt ? new Date(r.completedAt).toISOString() : undefined,
+      duration,
+      costCents: r.totalCostCents ?? 0,
+      nodeCount: r.nodeCount ?? 0,
+      nodesCompleted: r.nodesCompleted ?? 0,
+    };
+  });
+
+  return { workflows };
+}
+
+// ── Query: Approvals ────────────────────────────────────
+
+async function queryApprovals(db: any, schema: any) {
+  const { approvals: approvalsTable, workflowRuns } = schema;
+
+  const rows = await db.select({
+    id: approvalsTable.id,
+    workflowRunId: approvalsTable.workflowRunId,
+    nodeId: approvalsTable.nodeId,
+    title: approvalsTable.title,
+    description: approvalsTable.description,
+    context: approvalsTable.context,
+    channels: approvalsTable.channels,
+    priority: approvalsTable.priority,
+    createdAt: approvalsTable.createdAt,
+    expiresAt: approvalsTable.expiresAt,
+  })
+    .from(approvalsTable)
+    .where(eq(approvalsTable.status, "pending"))
+    .orderBy(desc(approvalsTable.createdAt));
+
+  // Group by workflowRunId to match PendingApprovalGroup shape
+  const groups: Record<string, { workflowId: string; approvals: any[] }> = {};
+  for (const row of rows) {
+    if (!groups[row.workflowRunId]) {
+      groups[row.workflowRunId] = { workflowId: row.workflowRunId, approvals: [] };
+    }
+    groups[row.workflowRunId].approvals.push({
+      nodeId: row.nodeId,
+      nodeName: row.title,
+      requestedAt: new Date(row.createdAt).toISOString(),
+      expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : undefined,
+      channels: row.channels ?? ["dashboard"],
+      context: row.context ?? {},
+    });
+  }
+
+  return { pending: Object.values(groups) };
+}
+
+// ── Query: Packs ────────────────────────────────────────
+
+async function queryPacks(db: any, schema: any) {
+  const { workflowRuns } = schema;
+
+  // Get distinct templates per pack with run counts
+  const packData = await db.select({
+    packId: workflowRuns.packId,
+    templateId: workflowRuns.templateId,
+    templateName: workflowRuns.name,
+    runCount: count(),
+  })
+    .from(workflowRuns)
+    .groupBy(workflowRuns.packId, workflowRuns.templateId, workflowRuns.name)
+    .orderBy(workflowRuns.packId);
+
+  // Group templates by pack
+  const packMap: Record<string, { templates: { id: string; name: string; runCount: number }[] }> = {};
+  for (const row of packData) {
+    if (!packMap[row.packId]) {
+      packMap[row.packId] = { templates: [] };
+    }
+    // Avoid duplicate template entries
+    const existing = packMap[row.packId].templates.find((t) => t.id === row.templateId);
+    if (!existing) {
+      packMap[row.packId].templates.push({
+        id: row.templateId,
+        name: row.templateName,
+        runCount: Number(row.runCount),
+      });
+    }
+  }
+
+  // Build pack list including known packs even if no runs exist
+  const allPackIds = new Set([...Object.keys(PACK_META), ...Object.keys(packMap)]);
+  const packs = Array.from(allPackIds).map((packId) => {
+    const meta = getPackMeta(packId);
+    const templates = packMap[packId]?.templates ?? [];
+    return {
+      id: packId,
+      name: meta.name,
+      description: `${meta.name} automation workflows`,
+      icon: meta.icon,
+      color: meta.color,
+      requiredIntegrations: [] as string[],
+      workflowCount: templates.length,
+      workflows: templates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: "",
+        tags: [] as string[],
+        estimatedCostCents: 0,
+      })),
+    };
+  });
+
+  return { packs };
+}
+
+// ── Mock fallback handler ───────────────────────────────
+
+function handleMockRequest(route: string, request: NextRequest): NextResponse {
   // Dashboard stats
   if (route === "stats/dashboard") {
     return NextResponse.json(mockDashboardStats());
